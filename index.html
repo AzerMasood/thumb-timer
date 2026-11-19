@@ -1,0 +1,318 @@
+<!doctype html><html><head><meta charset=utf8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover"><style>:root{color-scheme:light;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}html{scroll-padding-top:env(safe-area-inset-top,0px)}body{margin:0;padding:0;font:14px -apple-system,BlinkMacSystemFont,sans-serif;background:#fff;color:#000}img{max-width:100%}[hidden]:not([hidden=until-found i]){display:none!important}</style></head><body>
+<title>Thumb Timer</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Outfit:wght@400;500&display=swap">
+<style>
+/* Layout: black stage with a movable clock; a quarter dial and the start button sit in the thumb corner. Single committed dark look for OLED. */
+:root{--bg:#000;--ink:#ececec;--dim:#6f6f6f;--line:#1f1f1f;--line2:#2c2c2c;--accent:#ffb000;--S:340px;color-scheme:dark}
+*{box-sizing:border-box;-webkit-tap-highlight-color:transparent}
+html,body{height:100%;margin:0;overflow:hidden;overscroll-behavior:none}
+body{position:relative;min-height:520px;background:var(--bg);color:var(--ink);font:400 14px/1.3 'Outfit',system-ui,sans-serif;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none;padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px))}
+#app{position:absolute;inset:0;overflow:hidden}
+#clock{position:absolute;transform:translate(-50%,-50%);display:flex;flex-direction:column;align-items:center;white-space:nowrap;font-family:'DM Mono',ui-monospace,monospace;line-height:1;color:var(--ink);z-index:0}
+.dg{font-weight:500;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
+.dg i{font-style:normal;color:var(--accent)}
+.dg.min{font-weight:300}
+.dg.min i{color:var(--dim)}
+.cap{margin-top:.7em;font:500 .6em/1 'Outfit',system-ui,sans-serif;letter-spacing:.18em;text-transform:uppercase;color:var(--dim)}
+.sq{position:relative;width:14em;height:14em}
+.sq svg{position:absolute;inset:0;width:100%;height:100%}
+.mid{position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center}
+.bar{width:15em;display:flex;flex-direction:column;align-items:center;gap:.9em}
+.track{width:100%;height:.3em;background:var(--line);border-radius:1em;overflow:hidden}
+.fill{height:100%;background:var(--accent);border-radius:1em}
+.row{display:flex;align-items:center;justify-content:center}
+.bx{display:inline-flex;width:.9em;height:1.25em;align-items:center;justify-content:center;border:1px solid var(--line2);border-radius:.14em;background:#0a0a0a;margin:0 .04em;font-weight:500}
+.co{color:var(--accent);margin:0 .08em;font-weight:500}
+#clock.done .dg{animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:.2}}
+body.edit #clock{outline:1px dashed var(--accent);outline-offset:.8em}
+#layer{position:absolute;inset:0;z-index:1;pointer-events:none;touch-action:none}
+body.edit #layer{pointer-events:auto}
+#dialwrap{position:absolute;bottom:0;right:0;width:var(--S);height:var(--S);pointer-events:none;z-index:2}
+body.left #dialwrap{right:auto;left:0}
+#dial{position:absolute;inset:0;width:100%;height:100%;overflow:visible;pointer-events:none;touch-action:none}
+body.left #dial{transform:scaleX(-1)}
+.band{fill:#080808;stroke:var(--line2);stroke-width:.35;pointer-events:all;transition:fill .12s}
+.band.on{fill:color-mix(in srgb,var(--accent) 16%,#000)}
+.ts{stroke:#3a3a3a;stroke-width:.5;stroke-linecap:round}
+.tl{stroke:#7a7a7a;stroke-width:.8;stroke-linecap:round}
+#go{position:absolute;right:calc(var(--S)*.015);bottom:calc(var(--S)*.015);width:calc(var(--S)*.25);height:calc(var(--S)*.25);border-radius:50%;border:0;padding:0;background:var(--accent);color:#000;display:grid;place-items:center;pointer-events:auto;cursor:pointer}
+body.left #go{right:auto;left:calc(var(--S)*.015)}
+#go svg{width:42%;height:42%;fill:currentColor}
+#go:active{transform:scale(.96)}
+#rail{position:absolute;bottom:calc(var(--S) + 10px);right:12px;display:flex;flex-wrap:wrap;gap:6px;justify-content:flex-end;max-width:calc(100% - 24px);z-index:3}
+body.left #rail{right:auto;left:12px;justify-content:flex-start}
+.chip{font:500 12px/1 'Outfit',system-ui,sans-serif;color:var(--ink);background:#0b0b0b;border:1px solid var(--line2);border-radius:999px;padding:0 13px;height:36px;display:inline-flex;align-items:center;gap:7px;cursor:pointer}
+.chip:active{transform:scale(.97)}
+.chip .sw{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+#toast{position:absolute;left:50%;top:14px;transform:translateX(-50%);max-width:88%;text-align:center;font-size:13px;color:var(--ink);background:#111;border:1px solid var(--line2);border-radius:10px;padding:8px 12px;opacity:0;transition:opacity .2s;pointer-events:none;z-index:5}
+#toast.show{opacity:1}
+@media (prefers-reduced-motion:reduce){#clock.done .dg{animation:none}.band{transition:none}}
+</style>
+
+<div id="app">
+  <div id="clock" aria-live="off"></div>
+  <div id="layer"></div>
+  <div id="rail">
+    <button class="chip" id="cStyle" type="button"></button>
+    <button class="chip" id="cColor" type="button"><span class="sw"></span>Color</button>
+    <button class="chip" id="cHap" type="button"></button>
+    <button class="chip" id="cEdit" type="button">Move and size</button>
+    <button class="chip" id="cHand" type="button"></button>
+    <button class="chip" id="cReset" type="button">Reset</button>
+  </div>
+  <div id="dialwrap">
+    <svg id="dial" viewBox="0 0 100 100" role="group" aria-label="Quarter dial. Swipe up along the arc to add time.">
+      <defs><clipPath id="q"><path d="M100 100L100 0A100 100 0 0 0 0 100Z"/></clipPath></defs>
+      <path id="bandC" class="band"/>
+      <path id="bandF" class="band"/>
+      <g clip-path="url(#q)"><g id="tkC"></g><g id="tkF"></g></g>
+    </svg>
+    <button id="go" type="button" aria-label="Start"></button>
+  </div>
+  <div id="toast" role="status"></div>
+</div>
+
+<script>
+(function(){
+var $=function(s){return document.querySelector(s)};
+var STYLES=['Digital','Minimal','Ring','Dots','Analog','Bar','Blocks'];
+var ACCENTS=[['Amber','#ffb000'],['Cyan','#2ee6ff'],['Green','#3dff8a'],['Red','#ff4d4d'],['White','#f2f2f2']];
+var HAP=[['Off',0],['Light',8],['Medium',16],['Strong',30]];
+var KEY='thumb-timer-v1';
+var S={style:0,accent:0,hap:1,left:false,x:.5,y:.3,scale:1,total:300};
+try{var v=JSON.parse(localStorage.getItem(KEY)||'null');if(v&&typeof v==='object'){for(var k in S){if(typeof v[k]===typeof S[k])S[k]=v[k];}}}catch(e){}
+function clamp(n,a,b){return Math.min(b,Math.max(a,n))}
+S.style=clamp(S.style|0,0,STYLES.length-1);S.accent=clamp(S.accent|0,0,ACCENTS.length-1);S.hap=clamp(S.hap|0,0,HAP.length-1);
+S.x=clamp(S.x,.05,.95);S.y=clamp(S.y,.05,.95);S.scale=clamp(S.scale,.4,2.6);S.total=clamp(Math.round(S.total)||300,0,10800);
+function save(){try{localStorage.setItem(KEY,JSON.stringify(S))}catch(e){}}
+
+var app=$('#app'),clock=$('#clock'),go=$('#go'),toastEl=$('#toast');
+var remaining=S.total,status='idle',endAt=0,editing=false,wake=null,alarmTimer=null,actx=null,hapNote=false,tt=0;
+var scrollC=0,scrollF=0;
+
+function toast(m){toastEl.textContent=m;toastEl.classList.add('show');clearTimeout(tt);tt=setTimeout(function(){toastEl.classList.remove('show')},3400)}
+
+function vib(p){
+  try{
+    if(!navigator.vibrate){if(!hapNote){hapNote=true;toast('This browser cannot vibrate. Open the page in Chrome on Android.')}return}
+    var ok=navigator.vibrate(p);
+    if(ok===false&&!hapNote){hapNote=true;toast('Vibration is blocked in this view. Try the page in your phone browser.')}
+  }catch(e){}
+}
+function tickBuzz(m){var lv=HAP[S.hap][1];if(lv)vib(Math.round(lv*(m||1)))}
+function beep(){
+  try{
+    actx=actx||new (window.AudioContext||window.webkitAudioContext)();
+    if(actx.state==='suspended')actx.resume();
+    [0,.22,.44].forEach(function(t){
+      var o=actx.createOscillator(),g=actx.createGain(),n=actx.currentTime+t;
+      o.type='sine';o.frequency.value=880;
+      g.gain.setValueAtTime(0,n);g.gain.linearRampToValueAtTime(.25,n+.02);g.gain.linearRampToValueAtTime(0,n+.16);
+      o.connect(g);g.connect(actx.destination);o.start(n);o.stop(n+.2);
+    });
+  }catch(e){}
+}
+function ring(){if(HAP[S.hap][1])vib([400,150,400,150,800]);beep()}
+async function lock(){try{if(navigator.wakeLock&&!wake){wake=await navigator.wakeLock.request('screen');wake.addEventListener('release',function(){wake=null})}}catch(e){}}
+function unlock(){try{if(wake)wake.release()}catch(e){}wake=null}
+
+function pad(n){return n<10?'0'+n:''+n}
+function fmt(s){s=Math.max(0,Math.ceil(s));var h=Math.floor(s/3600),m=Math.floor(s%3600/60),c=s%60;return h>0?h+':'+pad(m)+':'+pad(c):pad(m)+':'+pad(c)}
+function colon(t){return t.replace(/:/g,'<i>:</i>')}
+var LABEL={idle:'ready',running:'running',paused:'paused',done:"time's up"};
+
+function render(t,frac,dig){
+  var st=STYLES[S.style],lab='<div class="cap">'+LABEL[status]+'</div>',h='',i,a;
+  if(st==='Digital')return '<div class="dg" style="font-size:'+dig+'em">'+colon(t)+'</div>'+lab;
+  if(st==='Minimal')return '<div class="dg min" style="font-size:'+(dig*1.05)+'em">'+colon(t)+'</div>';
+  if(st==='Ring'){
+    var C=2*Math.PI*90;
+    return '<div class="sq"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="90" fill="none" stroke="var(--line)" stroke-width="5"/>'+
+      (frac>.002?'<circle cx="100" cy="100" r="90" fill="none" stroke="var(--accent)" stroke-width="5" stroke-linecap="round" stroke-dasharray="'+C.toFixed(2)+'" stroke-dashoffset="'+(C*(1-frac)).toFixed(2)+'" transform="rotate(-90 100 100)"/>':'')+
+      '</svg><div class="mid"><div class="dg" style="font-size:'+(dig*.7)+'em">'+colon(t)+'</div>'+lab+'</div></div>';
+  }
+  if(st==='Dots'){
+    var n=Math.ceil(frac*60);
+    for(i=0;i<60;i++){a=i*Math.PI/30;h+='<circle cx="'+(100+90*Math.sin(a)).toFixed(2)+'" cy="'+(100-90*Math.cos(a)).toFixed(2)+'" r="'+(i%5===0?3.2:2.2)+'" fill="'+(i<n?'var(--accent)':'#1c1c1c')+'"/>'}
+    return '<div class="sq"><svg viewBox="0 0 200 200">'+h+'</svg><div class="mid"><div class="dg" style="font-size:'+(dig*.7)+'em">'+colon(t)+'</div>'+lab+'</div></div>';
+  }
+  if(st==='Analog'){
+    var th=frac*2*Math.PI,x=100+92*Math.sin(th),y=100-92*Math.cos(th),hx=100+84*Math.sin(th),hy=100-84*Math.cos(th),w='';
+    for(i=0;i<60;i++){a=i*Math.PI/30;var r1=i%5===0?80:86;h+='<line x1="'+(100+r1*Math.sin(a)).toFixed(2)+'" y1="'+(100-r1*Math.cos(a)).toFixed(2)+'" x2="'+(100+92*Math.sin(a)).toFixed(2)+'" y2="'+(100-92*Math.cos(a)).toFixed(2)+'" stroke="'+(i%5===0?'#8a8a8a':'#3a3a3a')+'" stroke-width="'+(i%5===0?2:1)+'"/>'}
+    if(frac>.999)w='<circle cx="100" cy="100" r="92" fill="var(--accent)" opacity=".2"/>';
+    else if(frac>.002)w='<path d="M100 100L100 8A92 92 0 '+(frac>.5?1:0)+' 1 '+x.toFixed(2)+' '+y.toFixed(2)+'Z" fill="var(--accent)" opacity=".2"/>';
+    return '<div class="sq"><svg viewBox="0 0 200 200"><circle cx="100" cy="100" r="96" fill="none" stroke="var(--line2)" stroke-width="1.5"/>'+w+h+
+      '<line x1="100" y1="100" x2="'+hx.toFixed(2)+'" y2="'+hy.toFixed(2)+'" stroke="var(--accent)" stroke-width="3" stroke-linecap="round"/><circle cx="100" cy="100" r="4.5" fill="var(--accent)"/></svg></div>'+
+      '<div class="dg" style="font-size:2.2em;margin-top:.5em">'+colon(t)+'</div>'+lab;
+  }
+  if(st==='Bar')return '<div class="bar"><div class="dg" style="font-size:'+dig+'em">'+colon(t)+'</div><div class="track"><div class="fill" style="width:'+(frac*100).toFixed(2)+'%"></div></div></div>'+lab;
+  for(i=0;i<t.length;i++){h+=t[i]===':'?'<span class="co">:</span>':'<span class="bx">'+t[i]+'</span>'}
+  return '<div class="row" style="font-size:'+(dig*.7)+'em">'+h+'</div>'+lab;
+}
+
+function draw(){
+  var t=fmt(remaining),frac=S.total>0?clamp(remaining/S.total,0,1):0,dig=t.length>5?3.2:4.6;
+  clock.className=status==='done'?'done':'';
+  clock.style.left=(S.x*100)+'%';clock.style.top=(S.y*100)+'%';clock.style.fontSize=(S.scale*20)+'px';
+  clock.innerHTML=render(t,frac,dig);
+}
+
+var ICON={
+  play:'<svg viewBox="0 0 24 24"><path d="M8 5v14l11-7z"/></svg>',
+  pause:'<svg viewBox="0 0 24 24"><path d="M7 5h4v14H7zM13 5h4v14h-4z"/></svg>',
+  stop:'<svg viewBox="0 0 24 24"><path d="M6 6h12v12H6z"/></svg>',
+  check:'<svg viewBox="0 0 24 24"><path d="M5 12.5l4.5 4.5L19 7.5" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg>'
+};
+function setGo(){
+  var k=editing?'check':status==='running'?'pause':status==='done'?'stop':'play';
+  var l=editing?'Finish editing':status==='running'?'Pause':status==='done'?'Stop alarm':'Start';
+  go.innerHTML=ICON[k];go.setAttribute('aria-label',l);
+}
+
+function finish(){
+  remaining=0;status='done';unlock();ring();
+  clearInterval(alarmTimer);alarmTimer=setInterval(ring,2600);
+  setGo();draw();
+}
+function update(){
+  if(status==='running'){remaining=(endAt-Date.now())/1000;if(remaining<=0){finish();return}}
+  draw();
+}
+function start(){
+  if(remaining<=0){tickBuzz(3);toast('Swipe the dial to set a time');return}
+  try{actx=actx||new (window.AudioContext||window.webkitAudioContext)();if(actx.state==='suspended')actx.resume()}catch(e){}
+  endAt=Date.now()+remaining*1000;status='running';lock();tickBuzz(2);setGo();draw();
+}
+function pause(){remaining=Math.max(0,(endAt-Date.now())/1000);status='paused';unlock();tickBuzz(2);setGo();draw()}
+function dismiss(){
+  clearInterval(alarmTimer);alarmTimer=null;
+  try{if(navigator.vibrate)navigator.vibrate(0)}catch(e){}
+  status='idle';remaining=S.total;setGo();draw();
+}
+function reset(){
+  clearInterval(alarmTimer);alarmTimer=null;unlock();
+  try{if(navigator.vibrate)navigator.vibrate(0)}catch(e){}
+  status='idle';remaining=S.total;tickBuzz(2);setGo();draw();
+}
+go.addEventListener('click',function(){
+  if(editing){setEdit(false);return}
+  if(status==='done'){dismiss();return}
+  if(status==='running'){pause();return}
+  start();
+});
+document.addEventListener('visibilitychange',function(){if(!document.hidden&&status==='running'){lock();update()}});
+
+function step(n,zone){
+  if(editing){
+    var ns=clamp(S.scale+n*.04,.4,2.6);
+    if(ns===S.scale){tickBuzz(2.5)}else{S.scale=ns;tickBuzz(1)}
+    draw();save();return;
+  }
+  if(status==='done')return;
+  var unit=zone==='c'?60:10,nr=Math.round(clamp(remaining+n*unit,0,10800)),delta=nr-remaining;
+  if(delta===0){tickBuzz(2.5);return}
+  remaining=nr;
+  if(status==='running'){endAt+=delta*1000;S.total=Math.max(S.total+delta,remaining)}else{S.total=remaining}
+  tickBuzz(1);draw();save();
+}
+
+var dial=$('#dial'),bandC=$('#bandC'),bandF=$('#bandF'),tkC=$('#tkC'),tkF=$('#tkF'),drag=null;
+function band(r1,r2){return 'M100 '+(100-r2)+' A'+r2+' '+r2+' 0 0 0 '+(100-r2)+' 100 L'+(100-r1)+' 100 A'+r1+' '+r1+' 0 0 1 100 '+(100-r1)+' Z'}
+bandC.setAttribute('d',band(68,100));bandF.setAttribute('d',band(34,66));
+function mkTicks(g,r1,r2,rl){
+  var h='',k,a,long,ra;
+  for(k=-2;k<=17;k++){a=k*6*Math.PI/180;long=(k%5===0);ra=long?rl:r1;
+    h+='<line x1="'+(100-ra*Math.sin(a)).toFixed(2)+'" y1="'+(100-ra*Math.cos(a)).toFixed(2)+'" x2="'+(100-r2*Math.sin(a)).toFixed(2)+'" y2="'+(100-r2*Math.cos(a)).toFixed(2)+'" class="'+(long?'tl':'ts')+'"/>';}
+  g.innerHTML=h;
+}
+mkTicks(tkC,91,98,85);mkTicks(tkF,59,65,53);
+function spin(){
+  tkC.setAttribute('transform','rotate('+(((scrollC%6)+6)%6)+' 100 100)');
+  tkF.setAttribute('transform','rotate('+(((scrollF%6)+6)%6)+' 100 100)');
+}
+function geom(){var r=dial.getBoundingClientRect();return {cx:S.left?r.left:r.right,cy:r.bottom,size:r.width}}
+function vec(e,g){return {dx:S.left?e.clientX-g.cx:g.cx-e.clientX,dy:g.cy-e.clientY}}
+function angleOf(e,g){var d=vec(e,g);return clamp(Math.atan2(d.dx,d.dy)*180/Math.PI,0,90)}
+dial.addEventListener('pointerdown',function(e){
+  var g=geom(),d=vec(e,g),f=Math.hypot(d.dx,d.dy)/g.size;
+  if(f<.34||f>1)return;
+  try{dial.setPointerCapture(e.pointerId)}catch(x){}
+  drag={id:e.pointerId,zone:f>.67?'c':'f',last:angleOf(e,g),acc:0,t:performance.now(),g:g};
+  (drag.zone==='c'?bandC:bandF).classList.add('on');
+  e.preventDefault();
+});
+dial.addEventListener('pointermove',function(e){
+  if(!drag||e.pointerId!==drag.id)return;
+  var a=angleOf(e,drag.g),now=performance.now(),d=drag.last-a,dt=Math.max(1,now-drag.t);
+  drag.last=a;drag.t=now;
+  if(drag.zone==='c')scrollC+=d;else scrollF+=d;
+  spin();
+  drag.acc+=d;
+  var n=Math.trunc(drag.acc/6);
+  if(!n)return;
+  drag.acc-=n*6;
+  var v=Math.abs(d)/dt,mult=editing?1:(drag.zone==='c'?(v>.5?5:v>.25?2:1):(v>.5?3:1));
+  step(n*mult,drag.zone);
+});
+function endDrag(e){if(drag&&e.pointerId===drag.id){drag=null;bandC.classList.remove('on');bandF.classList.remove('on')}}
+dial.addEventListener('pointerup',endDrag);dial.addEventListener('pointercancel',endDrag);
+
+var layer=$('#layer'),ptrs=new Map(),pinch=null;
+function pdist(){var a=Array.from(ptrs.values());return Math.hypot(a[0].x-a[1].x,a[0].y-a[1].y)||1}
+layer.addEventListener('pointerdown',function(e){
+  if(!editing)return;
+  try{layer.setPointerCapture(e.pointerId)}catch(x){}
+  ptrs.set(e.pointerId,{x:e.clientX,y:e.clientY});
+  if(ptrs.size===2)pinch={d:pdist(),s:S.scale};
+});
+layer.addEventListener('pointermove',function(e){
+  var p=ptrs.get(e.pointerId);if(!p)return;
+  if(ptrs.size===1){
+    var W=app.clientWidth||1,H=app.clientHeight||1;
+    S.x=clamp(S.x+(e.clientX-p.x)/W,.05,.95);S.y=clamp(S.y+(e.clientY-p.y)/H,.05,.95);
+    p.x=e.clientX;p.y=e.clientY;
+  }else{
+    p.x=e.clientX;p.y=e.clientY;
+    if(pinch)S.scale=clamp(pinch.s*pdist()/pinch.d,.4,2.6);
+  }
+  draw();
+});
+function layerEnd(e){ptrs.delete(e.pointerId);pinch=null;if(ptrs.size===1){var p=Array.from(ptrs.values())[0];}save()}
+layer.addEventListener('pointerup',layerEnd);layer.addEventListener('pointercancel',layerEnd);
+
+function setEdit(on){
+  editing=on;document.body.classList.toggle('edit',on);setGo();chips();
+  if(on)toast('Drag anywhere to move the clock. Swipe the dial to resize.');
+  else toast('Layout saved');
+}
+
+function chips(){
+  $('#cStyle').textContent='Style: '+STYLES[S.style];
+  $('#cHap').textContent='Haptics: '+HAP[S.hap][0];
+  $('#cHand').textContent=S.left?'Left hand':'Right hand';
+  $('#cEdit').textContent=editing?'Done editing':'Move and size';
+  document.documentElement.style.setProperty('--accent',ACCENTS[S.accent][1]);
+}
+$('#cStyle').addEventListener('click',function(){S.style=(S.style+1)%STYLES.length;tickBuzz(1);chips();draw();save()});
+$('#cColor').addEventListener('click',function(){S.accent=(S.accent+1)%ACCENTS.length;tickBuzz(1);chips();draw();save();toast(ACCENTS[S.accent][0])});
+$('#cHap').addEventListener('click',function(){S.hap=(S.hap+1)%HAP.length;chips();tickBuzz(1.5);save();toast('Haptics: '+HAP[S.hap][0])});
+$('#cEdit').addEventListener('click',function(){setEdit(!editing)});
+$('#cHand').addEventListener('click',function(){S.left=!S.left;layout();chips();save()});
+$('#cReset').addEventListener('click',reset);
+
+function layout(){
+  var W=app.clientWidth,H=app.clientHeight,size=Math.max(200,Math.min(W*.92,H*.52,380));
+  document.documentElement.style.setProperty('--S',size+'px');
+  document.body.classList.toggle('left',S.left);
+}
+window.addEventListener('resize',layout);
+
+layout();chips();setGo();spin();draw();
+setInterval(update,100);
+setTimeout(function(){toast('Swipe the dial. Outer ring adds minutes, inner ring adds 10 seconds.')},500);
+})();
+</script>
+
+</body></html>
